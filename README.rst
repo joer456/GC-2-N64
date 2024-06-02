@@ -1,52 +1,16 @@
-==================================
-N64 to Gamecube Controller Adapter
-==================================
-
-In 2009, I wanted to play some N64 games of mine, but all the
-controllers had worn down control sticks and it made things frustrating. I
-looked at cleaning or repairing them, but after a few failed attempts, it was
-clear I needed to try something else. I started looking at making an adapter to
-play the N64 using a Gamecube controller.
-
-I found the existing `Cube64 Project`_ which did exactly that using a PIC
-microcontroller. At the time, I had 0 experience with programming
-microcontrollers, and programming a PIC required some programming circuitry
-that I didn't quite understand. Perhaps it wasn't that complicated, but my
-brother did happen to have an Arduino_ laying around, so I decided to take a
-shot at writing the code for the Arduino.
-
-This is that code. With only an Arduino and a 1K resistor, I successfully
-enjoyed my N64 games using a Gamecube controller, complete with Rumble!
-
-.. _Arduino: http://arduino.cc/en/Main/ArduinoBoardDuemilanove
-
 Materials
 =========
-This is an extensive list of what's required. A lot I had laying around already, nothing was that expensive.
-
 * A Gamecube controller
 
 * An N64
 
-* An Arduino. I used the Duemilanove with an AtMega328 running at 16MHz. A
-  different chip may have different timings, and a different speed will most
-  certainly require modifications to the timing code.
+* An Arduino with an AtMega328 running at 16MHz.
 
-* Gamecube controller extension cables. I picked a couple of these off eBay so
-  that I didn't have to splice my GC controller cables up. I spliced the
-  extension cables to plug into the arduino, so I would have a nice socket to
-  plug the GC controllers into.
+* Gamecube controller extension cables.
 
-* A 64 controller, to splice the plug from. A 64 extension cable would also
-  work, but since my existing controllers were pretty much useless, I cut the
-  cables to use to connect the Arduino to the N64 itself.
+* N64 extension cable 
 
-* Some wire and alligator clips or a breadboard or something to hook everything
-  up with
-
-* A single 1K ohm resistor, as a pull-up resistor. Higher resistance will
-  probably work just fine. I'm not an electronics guy, but the 1K works fine
-  for me.
+* 1K ohm resistor, as a pull-up resistor.
 
 Quick Setup
 ===========
@@ -56,7 +20,7 @@ Hooking the N64 to the Arduino
 ------------------------------
 The N64 controller cord had 3 wires: ground, +3.3V, and data. The pin-out is shown in Figure 1 (left).
 
-1. +3.3V (red) - connect to nothing
+1. +3.3V (red) - connect to 3.3v
 
 2. Data (white) - connect to Arduino digital I/O 8
 
@@ -73,29 +37,23 @@ the wire colors match the pin-out before you connect them up.
 
 Hooking up the Gamecube controller to the Arduino
 -------------------------------------------------
-The GC controller cord had 6 wires: +5V, +3.3V, data, 2x ground, and one unused wire. The pin-out is shown in Figure 1 (right).
+The GC controller cord had 5 wires: +5V, +3.3V, data, 2x ground. The pin-out is shown in Figure 1 (right).
 
-1. +5V (green) - connect to Arduino +5V supply
+1. +5V (White) - connect to Arduino +5V supply
 
-2. Data (red) - connect to Arduino digital I/O 2
+2. Data (Red ) - connect to Arduino digital I/O 2
 
 3. GND (yellow) - connect to Arduino ground
 
-4. GND (brown) - connect to Arduino ground
+4. GND (Black) - connect to Arduino ground
 
-5. N/C (black) - don't connect
+5. N/C () - No wire
 
-6. +3.3V (orange) - connect to Arduino +3.3V supply
+6. +3.3V (Green) - connect to Arduino +3.3V supply
 
-The internal wire colors may vary from the ones listed here. Remember, I
-spliced some third party GC cables I got off eBay, so I wouldn't be surprised
-if the wire colors were not the same as an official GC controller. Verify the
+The internal wire colors may vary from the ones listed here. Verify the
 colors match the actual pin-out.
 
-Also, as you can see, the Arduino provides power to the controller: 3.3V to the
-circuits, and 5V for the rumble. The Arduino needs its own power supplied to
-it, either via USB or an external power brick. The N64 doesn't provide enough
-power for the Arduino.
 
 Attaching the Pull-up Resistor
 ------------------------------
@@ -131,6 +89,44 @@ Configuration
 There are two things that people may want to customize. Both of them require
 editing source code, I didn't make any easy or dynamic interface to them.
 
+This is done with Bitwise operations, here's an example of how I mapped GC-L to N64-L:
+Original Button Mapping:
+
+    GameCube (GC) controller data is stored in two bytes, data1 and data2.
+    The N64 controller expects the button states in a different format.
+
+Button Bits in gc_status:
+
+    gc_status.data1 contains: 0, 0, 0, start, y, x, b, a
+    gc_status.data2 contains: 1, L, R, Z, Dup, Ddown, Dright, Dleft
+
+Mapping Explanation:
+L Button:
+
+    The L button is bit 6 in gc_status.data2 (counting from the right, starting at 0).
+    We need to map this to the appropriate bit in the N64's button buffer.
+
+Bitwise Operations:
+
+    Bitwise >> 4 shifts the bits of gc_status.data2 to the right by 4 positions.
+
+Why >> 4 for L?
+
+    Locate L Button: gc_status.data2 & 0x40
+        0x40 in binary is 01000000, so this masks out all bits except for bit 6.
+    Shift to Correct Position: >> 4
+        Shifting the masked result (01000000) right by 4 bits results in 00000100.
+
+Updated Mapping in n64_buffer:
+
+    n64_buffer[1] should contain: 0, 0, L, R, Cup, Cdown, Cleft, Cright
+    Mapping the L button from gc_status.data2 to n64_buffer[1] is done as:
+
+    c
+
+n64_buffer[1] |= (gc_status.data2 & 0x40) >> 4; // L -> L
+
+
 X and Y button mappings
 -----------------------
 Since the X and Y buttons don't exist on the N64, one has some freedom in
@@ -164,13 +160,12 @@ In my experience, this curve helps in some games, but hurts in others.
 
 Method
 ======
-Here's the technical info on how all this works
 
 Hardware Setup
 --------------
-The gamecube connection has 6 wires: 2 ground, a 3.3V rail, a 5V rail for rumble, a data line, and an unused line. The data line goes into digital I/O 2. The rest go in their obvious places.
+The gamecube connection has 6 wires: 2 ground, a 3.3V rail, a 5V rail for rumble, a data line, and an unused line. The data line goes into digital I/O 2.
 
-The N64 has 3 wires: 3.3V power supply, data, and ground. I don't use the power, the arduino needs to be powered externally anyways and provides its own 3.3V supply. The data plugs into digital I/O 8 and ground goes to ground.
+The N64 has 3 wires: 3.3V power supply, data, and ground. If you want rumble to work, you will need to supply power to the arduino, if not, this can run on 3.3v driect from the N64. The data plugs into digital I/O 8 and ground goes to ground.
 
 Pull-up Resistor
 ----------------
