@@ -175,48 +175,36 @@ static void init_gc_controller()
  */
 static void gc_to_64()
 {
-    // clear it out
+    // Clear out the buffer
     memset(n64_buffer, 0, sizeof(n64_buffer));
-    // For reference, the bits in data1 and data2 of the gamecube struct:
-    // data1: 0, 0, 0, start, y, x, b, a
-    // data2: 1, L, R, Z, Dup, Ddown, Dright, Dleft
 
     // First byte in n64_buffer should contain:
     // A, B, Z, Start, Dup, Ddown, Dleft, Dright
     //                                                GC -> 64
     n64_buffer[0] |= (gc_status.data1 & 0x01) << 7; // A -> A
     n64_buffer[0] |= (gc_status.data1 & 0x02) << 5; // B -> B
-    n64_buffer[0] |= (gc_status.data2 & 0x40) >> 1; // L -> Z
-    n64_buffer[0] |= (gc_status.data1 & 0x10)     ; // S -> S
-    n64_buffer[0] |= (gc_status.data2 & 0x0C)     ; // D pad up and down
-    n64_buffer[0] |= (gc_status.data2 & 0x02) >> 1; // D pad right
-    n64_buffer[0] |= (gc_status.data2 & 0x01) << 1; // D pad left
+    n64_buffer[0] |= (gc_status.data2 & 0x10) << 1; // Z -> Z
+    n64_buffer[0] |= (gc_status.data1 & 0x10);      // Start -> Start
+    n64_buffer[0] |= (gc_status.data2 & 0x08) << 2; // D-pad Up -> Dup
+    n64_buffer[0] |= (gc_status.data2 & 0x04) << 3; // D-pad Down -> Ddown
+    n64_buffer[0] |= (gc_status.data2 & 0x02) >> 1; // D-pad Right -> Dright
+    n64_buffer[0] |= (gc_status.data2 & 0x01) << 1; // D-pad Left -> Dleft
 
     // Second byte to N64 should contain:
     // 0, 0, L, R, Cup, Cdown, Cleft, Cright
-    //n64_buffer[1] |= (gc_status.data2 & 0x10) << 1; // Z -> L (who uses N64's L?)
-    n64_buffer[0] |= (gc_status.data2 & 0x10) << 1; // Z -> Z (changed to map Z to Z)
     n64_buffer[1] |= (gc_status.data2 & 0x20) >> 1; // R -> R
 
-    // L and R pressed if the pressure sensitive button crosses
-    // a threshold, so they don't have to be fully pressed down
+    // L and R pressed if the pressure sensitive button crosses a threshold
     if (gc_status.left > 0x50)
-        n64_buffer[0] |= 0x20;
+        n64_buffer[1] |= 0x20; // L
     if (gc_status.right > 0x50)
-        n64_buffer[1] |= 0x10;
+        n64_buffer[1] |= 0x10; // R
 
     // Optional, map the X and Y buttons to something
-    // These can  map to anything, since the 64 doesn't have
-    // an x and y. They're free.
     n64_buffer[1] |= (gc_status.data1 & 0x08) >> 2; // Y -> Cleft
-  //n64_buffer[1] |= (gc_status.data1 & 0x04)     ; // X -> Cdown
     n64_buffer[1] |= (gc_status.data1 & 0x04) >> 2; // X -> Cright
 
-    // C buttons are tricky, translate the C stick values to determine which C
-    // buttons are "pressed"
-    // Analog sticks are a value 0-255 with the center at 128 the maximum and
-    // minimum values seemed to vary a bit, but we only need to choose a
-    // threshold here
+    // C buttons are tricky, translate the C stick values to determine which C buttons are "pressed"
     if (gc_status.cstick_x < 0x50) {
         // C-left
         n64_buffer[1] |= 0x02;
@@ -234,42 +222,22 @@ static void gc_to_64()
         n64_buffer[1] |= 0x08;
     }
 
-    // Control sticks:
-    // gc gives an unsigned value from 0 to 256, with 128 being neutral
-    // 64 expects a signed value from -128 to 128 with 0 being neutral
-    //
-    // Additionally, the 64 controllers are relative. Whatever stick position
-    // it's in when it's powered on is what it reports as 0.
-    // Gamecube controllers, on the other hand, are absolute. No matter what
-    // position the stick is in when it's powered on, it doesn't matter.
-    // However, due to (I'm guessing) variations in exactly what neutral is
-    // from controller to controller, the gamecube still sets a center value
-    // per controller when they're plugged in. We need to emulate this
-    // functionality. This is done in setup() when zero_x and zero_y are set
-    //
-    //
-    // Also, evidentially, the gamecube controllers can have a variation of 2
-    // or 3 units for their idle position. The 64 may not care, but I'm just
-    // noting it here.
-    
-#if 1
+    // Control sticks: Convert GC stick values to N64 expected values
     // Third byte: Control Stick X position
-    n64_buffer[2] = -zero_x + gc_status.stick_x;
+    n64_buffer[2] = (int8_t)(gc_status.stick_x - zero_x);
     // Fourth byte: Control Stick Y Position
-    n64_buffer[3] = -zero_y + gc_status.stick_y;
-#else
-    // This code applies a slight curve to the input mappings for the
-    // stick. It makes it feel more natural in games like perfect dark.
-    // To see what this does illustrated, put this line into gnuplot:
-    // plot [-128: 128] x, x**3 * 0.000031 + x/2
-    long int stick = -zero_x + gc_status.stick_x;
-    n64_buffer[2] = stick*stick*stick * 0.000031 + stick * 0.5;
+    n64_buffer[3] = (int8_t)(gc_status.stick_y - zero_y);
 
-    stick = -zero_y + gc_status.stick_y;
-    n64_buffer[3] = stick*stick*stick * 0.000031 + stick * 0.5;
-#endif
-    
+    // Optional alternative curve for control stick input
+    #if 0
+    // Uncomment this block to apply a slight curve to the input mappings
+    // plot [-128:128] x, x**3 * 0.000031 + x/2 to see the effect
+    long int stick = gc_status.stick_x - zero_x;
+    n64_buffer[2] = (int8_t)(stick * stick * stick * 0.000031 + stick * 0.5);
 
+    stick = gc_status.stick_y - zero_y;
+    n64_buffer[3] = (int8_t)(stick * stick * stick * 0.000031 + stick * 0.5);
+    #endif
 }
 
 /**
