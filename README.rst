@@ -122,9 +122,7 @@ Updated Mapping in n64_buffer:
     n64_buffer[1] should contain: 0, 0, L, R, Cup, Cdown, Cleft, Cright
     Mapping the L button from gc_status.data2 to n64_buffer[1] is done as:
 
-    c
-
-n64_buffer[1] |= (gc_status.data2 & 0x40) >> 4; // L -> L
+``n64_buffer[1] |= (gc_status.data2 & 0x40) >> 4; // L -> L``
 
 
 X and Y button mappings
