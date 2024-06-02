@@ -184,9 +184,8 @@ static void gc_to_64()
     n64_buffer[0] |= (gc_status.data1 & 0x01) << 7; // A -> A
     n64_buffer[0] |= (gc_status.data1 & 0x02) << 5; // B -> B
     n64_buffer[0] |= (gc_status.data2 & 0x10) << 1; // Z -> Z
-    n64_buffer[0] |= (gc_status.data1 & 0x10);      // Start -> Start
-    n64_buffer[0] |= (gc_status.data2 & 0x08) << 2; // D-pad Up -> Dup
-    n64_buffer[0] |= (gc_status.data2 & 0x04) << 3; // D-pad Down -> Ddown
+    n64_buffer[0] |= (gc_status.data1 & 0x10)     ; // Start -> Start
+    n64_buffer[0] |= (gc_status.data2 & 0x0C)     ; // D pad up and down
     n64_buffer[0] |= (gc_status.data2 & 0x02) >> 1; // D-pad Right -> Dright
     n64_buffer[0] |= (gc_status.data2 & 0x01) << 1; // D-pad Left -> Dleft
 
