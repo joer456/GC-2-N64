@@ -64,26 +64,6 @@ Configuration
 =============
 To edit the button mapping, edit `gamecube.ino` from line 172.
 
-Default mapping  is:
-
-| N64  | GC |
-| ------------- | ------------- |
-|A|A|
-|B|B|
-|CLEFT|Y, CLEFT
-|CRIGHT|X, CRIGHT
-|CUP|CUP|
-|CDOWN|CDOWN|
-|DLEFT|DLEFT|
-|DRIGHT|DRIGHT|
-|DUP|DUP|
-|DDOWN|DDOWN|
-|START|START|
-|Z|L,Z|
-|L|UNMAPPED|
-|R|R|
-
-
 This is done with Bitwise operations, here's an example of how I mapped GC-L to N64-L:
 Original Button Mapping:
 
