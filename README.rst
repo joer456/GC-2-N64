@@ -152,11 +152,13 @@ This microsecond timing is no problem for the AtMega328, but it does cut it kind
 
 Coding
 ------
-I coded the entire signaling routine (sending and receiving) in C, and then analyzed the assembly output, calculated the number of cycles each branch took using the `AVR Instruction Set manual`_, and added in the necessary number of "nop" instructions. Then re-compiled and tested.
+To flash your own firmware to the adaptor, first install the Arduino IDE and the lgt8fx Board Manager https://github.com/dbuezas/lgt8fx
 
-.. _AVR Instruction Set manual: http://www.atmel.com/dyn/resources/prod_documents/doc0856.pdf
+Ensure the following parameters are set under the board options
 
-After some trial and error, I was successfully sending and receiving commands from a gamecube controller. The N64 was easy after that, since they used the same encoding.
+.. figure:: https://github.com/joer456/Gamecube-N64-Controller/blob/master/img-2024-12-17-13-28-05.png
+    :alt: Board options
+
 
 Resources
 =========
