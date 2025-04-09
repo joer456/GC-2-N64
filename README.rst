@@ -167,12 +167,14 @@ Resources
 * `Nintendo 64 Controller Protocol information`_
 * `N64/Gamecube to USB adapter Project`_ had some code that was useful as a reference
 * `N64 to GameCube conversion project`_ (not sure why anyone would want to go in this direction)
+* `Gamecube N64 Controller Raphnet Curves`_
 
 .. _Cube64 Project: http://cia.vc/stats/project/navi-misc/cube64
 .. _Gamecube Controller Protocol information: http://www.int03.co.uk/crema/hardware/gamecube/gc-control.htm
 .. _Nintendo 64 Controller Protocol information: http://www.mixdown.ca/n64dev/
 .. _N64/Gamecube to USB adapter Project: http://www.raphnet.net/electronique/gc_n64_usb/index_en.php
 .. _N64 to GameCube conversion project: http://www.raphnet.net/electronique/x2wii/index_en.php
+.. _Gamecube N64 Controller Raphnet Curves: https://github.com/jarutherford/Gamecube-N64-Controller-Raphnet-Curves
 
 See Also
 ========
