@@ -62,7 +62,10 @@ at 3.3V unless the Arduino or the controller pulls it down to ground.
 
 Configuration
 =============
-To edit the button mapping, edit `gamecube.ino` from line 172.
+To edit the button mapping, check out jarutherford's button remapper -  https://jarutherford.com/gc2n64-remapper/
+
+Manual button remapping with Bitwise operators
+----------------------------------------------
 
 This is done with Bitwise operations, here's an example of how I mapped GC-L to N64-L:
 Original Button Mapping:
@@ -98,38 +101,6 @@ Updated Mapping in n64_buffer:
     Mapping the L button from gc_status.data2 to n64_buffer[1] is done as:
 
 ``n64_buffer[1] |= (gc_status.data2 & 0x40) >> 4; // L -> L``
-
-
-X and Y button mappings
------------------------
-Since the X and Y buttons don't exist on the N64, one has some freedom in
-mapping these buttons. I like to map them to C-down and C-left respectively for
-games like Starfox where those buttons are more significant. For something like
-Perfect Dark where C-left and C-right strafe, I map X and Y to those instead.
-
-You can go to around line 235 in ``gamecube.pde`` to configure the mapping. Try
-uncommenting the mapping for X -> Cdown and comment out the line for X ->
-Cright if you'd prefer that mapping.
-
-Analog Stick Curve
-------------------
-On some games, such as Perfect Dark, the control stick feels a bit weird. That
-is, it feels too sensitive, like there's not enough difference between fully
-tilted and slightly tilted. (or maybe it was not sensitive enough, I forget)
-
-To help with this, I apply a curve mapping inputs on the GC controller to
-outputs on the N64 "controller" in a non-linear fashion.
-
-.. figure:: https://github.com/brownan/Gamecube-N64-Controller/raw/master/curve.png
-    :alt: Analog Stick curve graph
-
-    Figure 2: A graph showing a linear mapping of inputs to outputs (red) and a
-    cubic mapping from inputs to outputs (green). Inputs (from the GC
-    controller) are along the X axis, while outputs (to the N64) are on the Y
-    axis.
-
-To turn this off, head to line 279 in ``gamecube.pde`` and change the 0 to a 1.
-In my experience, this curve helps in some games, but hurts in others.
 
 Method
 ======
