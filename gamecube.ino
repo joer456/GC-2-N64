@@ -1,6 +1,8 @@
 /**
  * Gamecube controller to Nintendo 64 adapter
  * by Andrew Brown
+ * Modified by Joef112 & jarutherford (Raphnet Curves)
+ * Analog L & R disabled, GCZ=N64 CDown, GC CDown=N64 L.
  */
 
 /**
@@ -15,12 +17,6 @@
  * Note: that diagram is not for this project, but for a similar project which
  * uses a PIC microcontroller. However, the diagram does describe the pinouts
  * of the gamecube and N64 wires.
- *
- * Also note: the N64 supplies a 3.3 volt line, but I don't plug that into
- * anything.  The arduino can't run off of that many volts, it needs more, so
- * it's powered externally. Additionally, the arduino has its own 3.3 volt
- * supply that I use to power the Gamecube controller. Therefore, only two lines
- * from the N64 are used.
  */
 
 /*
@@ -50,11 +46,9 @@
 
 #include "pins_arduino.h"
 
+// Pin definitions remain the same...
 #define GC_PIN 2
 #define GC_PIN_DIR DDRD
-// these two macros set arduino pin 2 to input or output, which with an
-// external 1K pull-up resistor to the 3.3V rail, is like pulling it high or
-// low.  These operations translate to 1 op code, which takes 2 cycles
 #define GC_HIGH DDRD &= ~0x04
 #define GC_LOW DDRD |= 0x04
 #define GC_QUERY (PIND & 0x04)
@@ -64,12 +58,26 @@
 #define N64_LOW DDRB |= 0x01
 #define N64_QUERY (PINB & 0x01)
 
-// 8 bytes of data that we get from the controller. This is a global
-// variable (not a struct definition)
+// Define conversion modes
+enum ConversionMode {
+    CONVERSION_MODE_2v0,
+    CONVERSION_MODE_1v5,
+    CONVERSION_MODE_EXTENDED
+};
+
+// Configuration structure
+struct Config {
+    ConversionMode conversion_mode;
+    bool deadzone_enabled;
+} convert;
+
+// Variables for stick mapping
+static char gc_x_origin = 0;
+static char gc_y_origin = 0;
+
+// 8 bytes of data that we get from the controller
 static struct {
-    // bits: 0, 0, 0, start, y, x, b, a
     unsigned char data1;
-    // bits: 1, L, R, Z, Dup, Ddown, Dright, Dleft
     unsigned char data2;
     unsigned char stick_x;
     unsigned char stick_y;
@@ -78,167 +86,217 @@ static struct {
     unsigned char left;
     unsigned char right;
 } gc_status;
-static char n64_raw_dump[281]; // maximum recv is 1+2+32 bytes + 1 bit
-// n64_raw_dump does /not/ include the command byte. That gets pushed into
-// n64_command:
-static unsigned char n64_command;
 
-// Zero points for the GC controller stick
+static char n64_raw_dump[281];
+static unsigned char n64_command;
 static unsigned char zero_x;
 static unsigned char zero_y;
-
-// bytes to send to the 64
-// maximum we'll need to send is 33, 32 for a read request and 1 CRC byte
 static unsigned char n64_buffer[33];
 
+// Function declarations
 static void gc_send(unsigned char *buffer, char length);
 static int gc_get();
 static void init_gc_controller();
 static void print_gc_status();
-static void gc_to_64();
 static void get_n64_command();
+void setOriginsFromStatus();
 
 #include "crc_table.h"
 
-void setup()
-{
-  Serial.begin(115200);
-
-  Serial.println();
-  Serial.println("Code has started!");
-  Serial.flush();
-
-  // Status LED
-  digitalWrite(13, LOW);
-  pinMode(13, OUTPUT);
-
-  // Communication with gamecube controller on this pin
-  // Don't remove these lines, we don't want to push +5V to the controller
-  digitalWrite(GC_PIN, LOW);  
-  pinMode(GC_PIN, INPUT);
-
-  // Communication with the N64 on this pin
-  digitalWrite(N64_PIN, LOW);
-  pinMode(N64_PIN, INPUT);
-
-  noInterrupts();
-  init_gc_controller();
-
-  do {
-      // Query for the gamecube controller's status. We do this
-      // to get the 0 point for the control stick.
-      unsigned char command[] = {0x40, 0x03, 0x00};
-      gc_send(command, 3);
-      // read in data and dump it to gc_raw_dump
-      gc_get();
-      interrupts();
-      zero_x = gc_status.stick_x;
-      zero_y = gc_status.stick_y;
-      Serial.print("GC zero point read: ");
-      Serial.print(zero_x, DEC);
-      Serial.print(", ");
-      Serial.println(zero_y, DEC);
-      Serial.flush();
-      
-      // some crappy/broken controllers seem to give bad readings
-      // occasionally. This is a cheap hack to keep reading the
-      // controller until we get a reading that is less erroneous.
-  } while (zero_x == 0 || zero_y == 0);
-  
-}
-
 static void init_gc_controller()
 {
-  // Initialize the gamecube controller by sending it a null byte.
-  // This is unnecessary for a standard controller, but is required for the
-  // Wavebird.
-  unsigned char initialize = 0x00;
-  gc_send(&initialize, 1);
+    // Initialize the gamecube controller by sending it a null byte.
+    // This is unnecessary for a standard controller, but is required for the
+    // Wavebird.
+    unsigned char initialize = 0x00;
+    gc_send(&initialize, 1);
 
-  // Stupid routine to wait for the gamecube controller to stop
-  // sending its response. We don't care what it is, but we
-  // can't start asking for status if it's still responding
-  int x;
-  for (x=0; x<64; x++) {
-      // make sure the line is idle for 64 iterations, should
-      // be plenty.
-      if (!GC_QUERY)
-          x = 0;
-  }
+    // Stupid routine to wait for the gamecube controller to stop
+    // sending its response. We don't care what it is, but we
+    // can't start asking for status if it's still responding
+    int x;
+    for (x=0; x<64; x++) {
+        // make sure the line is idle for 64 iterations, should
+        // be plenty.
+        if (!GC_QUERY)
+            x = 0;
+    }
 }
 
-/**
- * Reads from the gc_status struct and builds a 32 bit array ready to send to
- * the N64 when it queries us.  This is stored in n64_buffer[]
- * This function is where the translation happens from gamecube buttons to N64
- * buttons
- */
-static void gc_to_64()
-{
-    // Clear out the buffer
+void setup() {
+    Serial.begin(115200);
+    Serial.println();
+    Serial.println("Code has started!");
+    Serial.flush();
+    
+    // Status LED
+    digitalWrite(13, LOW);
+    pinMode(13, OUTPUT);
+    
+    // Communication pins setup
+    digitalWrite(GC_PIN, LOW);  
+    pinMode(GC_PIN, INPUT);
+    digitalWrite(N64_PIN, LOW);
+    pinMode(N64_PIN, INPUT);
+
+    noInterrupts();
+    init_gc_controller();
+
+    // Initialize stick mapping configuration
+    convert.conversion_mode = CONVERSION_MODE_2v0;
+    convert.deadzone_enabled = true;
+
+    // Read initial stick position
+    do {
+        unsigned char command[] = {0x40, 0x03, 0x00};
+        gc_send(command, 3);
+        gc_get();
+        interrupts();
+        zero_x = 0;  // Set to center position
+        zero_y = 0;  // Set to center position
+        Serial.print("Setting neutral point to: ");
+        Serial.print(zero_x, DEC);
+        Serial.print(", ");
+        Serial.println(zero_y, DEC);
+        Serial.flush();
+    } while (false);  // Only do once, assuming controller is centered at startup
+
+    setOriginsFromStatus();
+}
+
+// Stick mapping functions
+void setOriginsFromStatus() {
+    gc_x_origin = 0;  // Center position
+    gc_y_origin = 0;  // Center position
+    
+    Serial.print("Origins set to - X: ");
+    Serial.print(gc_x_origin, DEC);
+    Serial.print(" Y: ");
+    Serial.println(gc_y_origin, DEC);
+}
+
+int calb(char orig, unsigned char val) {
+    short tmp;
+    long mult = 26000; // V1.6 default
+    char dz = 0;
+
+    if (convert.conversion_mode == CONVERSION_MODE_1v5) {
+        mult = 25000;
+    }
+
+    if (convert.deadzone_enabled) {
+        dz = 12;
+        mult = 30000; // V1.6
+        if (convert.conversion_mode == CONVERSION_MODE_1v5) {
+            mult = 29000;
+        }
+    }
+
+    tmp = (signed char)(val^0x80) - orig;
+
+    if (dz) {
+        if (tmp > 0) {
+            if (tmp < dz) {
+                tmp = 0;
+            } else {
+                tmp -= dz;
+            }
+        }
+        else if (tmp < 0) {
+            if (tmp > -dz) {
+                tmp = 0;
+            } else {
+                tmp += dz;
+            }
+        }
+    }
+
+    if (convert.conversion_mode != CONVERSION_MODE_EXTENDED) {
+        tmp = tmp * mult / 32000L;
+    }
+
+    if (tmp <= -127)
+        tmp = -127;
+
+    if (tmp > 127)
+        tmp = 127;
+
+    return tmp;
+}
+
+
+void gamecubeXYtoN64(unsigned char x, unsigned char y, char *dst_x, char *dst_y) {
+    unsigned char abs_y, abs_x;
+    long sig_x, sig_y;
+    long sx, sy;
+    int n64_maxval = 80; // Version 1.6
+    long l = 256; // Version 1.6
+
+    if (convert.conversion_mode == CONVERSION_MODE_EXTENDED) {
+        sig_x = calb(gc_x_origin, x);
+        sig_y = calb(gc_y_origin, y);
+
+        *dst_x = sig_x;
+        *dst_y = sig_y;
+        return;
+    }
+
+    if (convert.conversion_mode == CONVERSION_MODE_1v5) {
+        l = 512;
+        n64_maxval = 127;
+    }
+
+    sig_x = calb(gc_x_origin, x);
+    sig_y = calb(gc_y_origin, y);
+
+    abs_y = abs(sig_y);
+    abs_x = abs(sig_x);
+
+    sx = sig_x + sig_x * abs_y / l;
+    sy = sig_y + sig_y * abs_x / l;
+
+    // Clamp to N64 range
+    if (sx <= -n64_maxval) sx = -n64_maxval;
+    if (sx > n64_maxval) sx = n64_maxval;
+    if (sy <= -n64_maxval) sy = -n64_maxval;
+    if (sy > n64_maxval) sy = n64_maxval;
+
+    *dst_x = sx;
+    *dst_y = sy;
+}
+
+void mapGamecubeToN64() {
     memset(n64_buffer, 0, sizeof(n64_buffer));
 
-    // First byte in n64_buffer should contain:
-    // A, B, Z, Start, Dup, Ddown, Dleft, Dright
-    //                                                GC -> 64
+    // Button mappings
     n64_buffer[0] |= (gc_status.data1 & 0x01) << 7; // A -> A
     n64_buffer[0] |= (gc_status.data1 & 0x02) << 5; // B -> B
-    n64_buffer[0] |= (gc_status.data2 & 0x10) << 1; // Z -> Z
-    n64_buffer[0] |= (gc_status.data1 & 0x10)     ; // Start -> Start
-    n64_buffer[0] |= (gc_status.data2 & 0x0C)     ; // D pad up and down
-    n64_buffer[0] |= (gc_status.data2 & 0x02) >> 1; // D-pad Right -> Dright
-    n64_buffer[0] |= (gc_status.data2 & 0x01) << 1; // D-pad Left -> Dleft
+    if (gc_status.data2 & 0x10) {
+        n64_buffer[1] |= 0x04; // N64 C Down
+    }
+    n64_buffer[0] |= (gc_status.data1 & 0x10); // Start -> Start
+    n64_buffer[0] |= (gc_status.data2 & 0x01) << 1; // D-pad mapped
+    n64_buffer[0] |= (gc_status.data2 & 0x02) >> 1; // D-pad mapped
+    n64_buffer[0] |= (gc_status.data2 & 0x04); // D-pad mapped
+    n64_buffer[0] |= (gc_status.data2 & 0x08); // D-pad mapped
 
-    // Second byte to N64 should contain:
-    // 0, 0, L, R, Cup, Cdown, Cleft, Cright
-    n64_buffer[1] |= (gc_status.data2 & 0x10) << 1; // Z -> L
-    //n64_buffer[0] |= (gc_status.data2 & 0x10) << 1; // Z -> Z 
+    n64_buffer[0] |= (gc_status.data2 & 0x40) >> 1; // L -> Z
     n64_buffer[1] |= (gc_status.data2 & 0x20) >> 1; // R -> R
 
-    // L and R pressed if the pressure sensitive button crosses a threshold
-    if (gc_status.left > 0x50)
-        n64_buffer[1] |= 0x20; // L
-    if (gc_status.right > 0x50)
-        n64_buffer[1] |= 0x10; // R
-
-    // Optional, map the X and Y buttons to something
     n64_buffer[1] |= (gc_status.data1 & 0x08) >> 2; // Y -> Cleft
     n64_buffer[1] |= (gc_status.data1 & 0x04) >> 2; // X -> Cright
 
-    // C buttons are tricky, translate the C stick values to determine which C buttons are "pressed"
-    if (gc_status.cstick_x < 0x50) {
-        // C-left
-        n64_buffer[1] |= 0x02;
-    }
-    if (gc_status.cstick_x > 0xB0) {
-        // C-right
-        n64_buffer[1] |= 0x01;
-    }
-    if (gc_status.cstick_y < 0x50) {
-        // C-down
-        n64_buffer[1] |= 0x04;
-    }
-    if (gc_status.cstick_y > 0xB0) {
-        // C-up
-        n64_buffer[1] |= 0x08;
-    }
+    // C-stick mapping
+    if (gc_status.cstick_x < 0x50) n64_buffer[1] |= 0x02; // C-left
+    if (gc_status.cstick_x > 0xB0) n64_buffer[1] |= 0x01; // C-right
+    if (gc_status.cstick_y < 0x50) n64_buffer[1] |= 0x20; // N64 L
+    if (gc_status.cstick_y > 0xB0) n64_buffer[1] |= 0x08; // C-up
 
-    // Control sticks: Convert GC stick values to N64 expected values
-    // Third byte: Control Stick X position
-    n64_buffer[2] = (int8_t)(gc_status.stick_x - zero_x);
-    // Fourth byte: Control Stick Y Position
-    n64_buffer[3] = (int8_t)(gc_status.stick_y - zero_y);
-
-    // Optional alternative curve for control stick input
-    #if 0
-    // Uncomment this block to apply a slight curve to the input mappings
-    // plot [-128:128] x, x**3 * 0.000031 + x/2 to see the effect
-    long int stick = gc_status.stick_x - zero_x;
-    n64_buffer[2] = (int8_t)(stick * stick * stick * 0.000031 + stick * 0.5);
-
-    stick = gc_status.stick_y - zero_y;
-    n64_buffer[3] = (int8_t)(stick * stick * stick * 0.000031 + stick * 0.5);
-    #endif
+    // Use the conversion functions for stick values
+    char n64_x, n64_y;
+    gamecubeXYtoN64(gc_status.stick_x, gc_status.stick_y, &n64_x, &n64_y);
+    n64_buffer[2] = n64_x;
+    n64_buffer[3] = n64_y;
 }
 
 /**
@@ -664,6 +722,31 @@ void loop()
     int status;
     unsigned char data, addr;
 
+    if (gc_status.stick_x == zero_x && gc_status.stick_y == zero_y) {
+    Serial.print("Raw stick: (");
+    Serial.print(gc_status.stick_x, DEC);
+    Serial.print(",");
+    Serial.print(gc_status.stick_y, DEC);
+    Serial.print(") After calb: (");
+    
+    // Calculate intermediate values
+    char x_tmp = calb(gc_x_origin, gc_status.stick_x);
+    char y_tmp = calb(gc_y_origin, gc_status.stick_y);
+    Serial.print(x_tmp, DEC);
+    Serial.print(",");
+    Serial.print(y_tmp, DEC);
+    Serial.print(") Final N64: (");
+    
+    // Get final mapped values
+    char n64_x, n64_y;
+    gamecubeXYtoN64(gc_status.stick_x, gc_status.stick_y, &n64_x, &n64_y);
+    Serial.print(n64_x, DEC);
+    Serial.print(",");
+    Serial.print(n64_y, DEC);
+    Serial.println(")");
+}
+
+
     // clear out incomming raw data buffer
     // this should be unnecessary
     //memset(gc_raw_dump, 0, sizeof(gc_raw_dump));
@@ -705,7 +788,7 @@ void loop()
         interrupts();
     } else {
         // translate the data to the n64 byte string
-        gc_to_64();
+        mapGamecubeToN64();
     }
 
     // Wait for incomming 64 command
@@ -732,7 +815,7 @@ void loop()
             // it won't work without it.
             n64_buffer[0] = 0x05;
             n64_buffer[1] = 0x00;
-            n64_buffer[2] = 0x01;
+            n64_buffer[2] = 0x02;
 
             n64_send(n64_buffer, 3, 0);
 
