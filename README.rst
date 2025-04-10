@@ -130,6 +130,7 @@ Ensure the following parameters are set under the board options
 .. figure:: https://github.com/joer456/Gamecube-N64-Controller/blob/master/img-2024-12-17-13-28-05.png
     :alt: Board options
 
+You may also need to connect a gamecube controller for the adaptor to be recognised by your PC
 
 Resources
 =========
